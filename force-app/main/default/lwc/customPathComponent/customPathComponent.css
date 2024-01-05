@@ -1,0 +1,13 @@
+.path-component {
+    background-color: white;
+    padding: 16px;
+    border-radius: 5px;
+}
+
+.path-button {
+    margin-left: 20px;
+}
+
+.confettiCanvas{
+    position: fixed;
+}

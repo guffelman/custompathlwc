@@ -1,0 +1,14 @@
+<template>
+    <canvas class="confettiCanvas" id="canvas" lwc:dom="manual"></canvas>
+
+    <div class="path-component">
+    <lightning-progress-indicator current-step={currentPath} type="path" variant="base">
+        <template for:each={allPaths} for:item="step">
+            <lightning-progress-step label={step.label} value={step.value} key={step.label}
+                                     onstepfocus={handlePathSelected}></lightning-progress-step>
+        </template>
+        <lightning-button class="path-button" variant="brand" label={buttonLabel}
+                          onclick={handleSavePath} disabled={pathNotClickable}></lightning-button>
+    </lightning-progress-indicator>
+    </div>
+</template>
