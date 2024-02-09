@@ -1,0 +1,19 @@
+.radial{
+    display: flex;
+    margin-top: 20px;
+}
+.radial-group{
+    margin-top: 20px;
+}
+
+.infotext{
+    font-size: 14px;
+    color: #2a2929;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+.button{
+    margin-left: 10px;
+    margin-right: 10px;
+}

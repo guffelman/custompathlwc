@@ -1,0 +1,23 @@
+<template>
+    <lightning-modal-header label="Hang on a sec!"></lightning-modal-header>
+    <lightning-modal-body> 
+        <!-- display fieldOptions as a radial selection -->
+        <p class="infotext">
+            In order to proceed to {stage}, you must select a value for {fieldName}. Please select from the following options:
+        </p>
+        <div class="radial-group">
+        <template for:each={fieldOptions} for:item="fieldOption">
+            
+            <lightning-input class="radial" type="radio" name="fieldOptionGroup" key={fieldOption.value} label={fieldOption.label} value={fieldOption.value}
+                             onchange={handleFieldChange}></lightning-input>
+            
+        </template>
+    </div>
+    </lightning-modal-body>
+    <lightning-modal-footer>
+        <div class="slds-align_absolute-center">
+            <lightning-button class="button" label="Cancel" onclick={handleCancel}></lightning-button>
+            <lightning-button class="button" label="OK" onclick={handleOkay}></lightning-button>
+        </div>
+    </lightning-modal-footer>
+</template>

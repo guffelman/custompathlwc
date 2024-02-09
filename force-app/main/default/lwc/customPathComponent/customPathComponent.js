@@ -1,11 +1,18 @@
+// customPathComponent.js
+// Garrett Uffelman (garrett.uffelman@customtruck.com)
+// Last Modified: 2024-01-05
+// Desc: Updated the custom path component to include dependent picklist functionality. 
+//       Cleaned up the code and added comments for clarity. 
+
 import { LightningElement, api, wire, track } from "lwc";
 // at some point, we need to look at uiRecordAPI as it is deprecated
 import { getRecord, updateRecord } from "lightning/uiRecordApi";
-import { getPicklistValues } from "lightning/uiObjectInfoApi";
+import { getPicklistValues, getObjectInfo } from "lightning/uiObjectInfoApi";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import LightningConfirm from "lightning/confirm";
 import vendorfield from "@salesforce/schema/Case.Number_of_unpaid_Vendors__c";
 
+import DependentStageModal from "c/customPathDependentStageModal";
 import { loadScript } from "lightning/platformResourceLoader";
 import CONFETTI from "@salesforce/resourceUrl/confetti";
 import successmario from "@salesforce/resourceUrl/successmario";
@@ -15,22 +22,38 @@ export default class CustomPath extends LightningElement {
   @api recordId;
   @api recordTypeId; // master record type   012000000000000AAA
   @api record;
-
+  @api objectInformation;
   @api picklistPathFieldApiName; // must be a picklist field and case-sensitive here
   @api hideButton; // whether to hide the button or just to disable the button
-
   @api pathChangeButtonLabel;
-
   @api navigationRule;
-  //   @api numVendors;
+  @api picklistDependencies;
+  @api dependentStatus;
+  @api dependentPicklistField;
 
   @track currentPath;
   @track selectedStep = "";
   @track allPaths = [];
-
   @track pathNotClickable = true;
+  @track showDependentPicklist = false;
+
 
   selectedPathIndex = -1;
+  dependentPicklistValues = [];
+  dependentPicklistValue;
+
+  // -----------------------------------------
+  // Wire Methods
+  // -----------------------------------------
+
+  @wire(getObjectInfo, { objectApiName: "$objectApiName" })
+  objectInfo({ error, data }) {
+    if (data) {
+      this.objectInformation = data;
+    } else if (error) {
+      console.error("Error fetching object info: ", error);
+    }
+  }
 
   @wire(getRecord, {
     recordId: "$recordId",
@@ -40,10 +63,24 @@ export default class CustomPath extends LightningElement {
     if (data) {
       this.currentPath = data.fields[this.picklistPathFieldApiName].value;
     } else if (error) {
-      console.log("fail to obtain current path with Id = ", this.recordId);
-      console.log(error);
+      console.error("Error fetching current path:", error);
     }
   }
+
+  @wire(getRecord, {
+    recordId: "$recordId",
+    fields: [vendorfield] // and any dependent fields
+
+  })
+  record;
+
+  @wire(getRecord, {
+    recordId: "$recordId",
+    fields: "$dependentPicklistFieldName",
+  }) 
+  dependentPicklistValue;
+
+
 
   @wire(getPicklistValues, {
     recordTypeId: "$recordTypeId",
@@ -52,30 +89,289 @@ export default class CustomPath extends LightningElement {
   fetchAllPaths({ error, data }) {
     if (data) {
       this.allPaths = this.parseAllPathsData(data);
-      console.log("g>>>>>> " + this.allPaths);
     } else if (error) {
-      console.log(
+      console.error(
         "fail to obtain picklist values with fieldApiName = ",
         this.objectQualifiedPathFieldApiName,
         " on record-type-id = ",
         this.recordTypeId
       );
-      console.log(error);
+      console.error(error);
     }
   }
 
-  @wire(getRecord, {
-    recordId: "$recordId",
-    fields: [vendorfield],
+  @wire(getPicklistValues, {
+    recordTypeId: "$recordTypeId",
+    fieldApiName: "$dependentPicklistFieldName",
   })
-  record;
+  wiredPicklistValues({ error, data }) {
+    if (data) {
+      this.dependentPicklistValues = data.values.map((item) => ({
+        label: item.label,
+        value: item.value,
+      }));
+    } else if (error) {
+      console.error("Error fetching picklist values", error);
+    }
+  }
+
+
+
+
+  // -----------------------------------------
+  // Connected Callback & Rendered Callback
+  // -----------------------------------------
+
+  connectedCallback() {
+    if (this.picklistDependencies) {
+      // if the picklistDependencies is defined and the picklistDependencyIndex is the same as the currentPathIndex, then hide the save button
+      if (this.picklistDependencyIndex == this.currentPathIndex + 1) {
+        // do nothing, the button will be hidden
+      }
+    }
+    Promise.all([loadScript(this, CONFETTI)])
+      .then(() => {
+        this.setUpCanvas();
+      })
+      .catch((error) => {
+        this.dispatchEvent(
+          new ShowToastEvent({
+            title: "Error",
+            message: error.message,
+            variant: error,
+          })
+        );
+      });
+  }
+
+  renderedCallback() {
+    if (this.hideButton) {
+      this.toggleChangePathButton(this.pathNotClickable);
+    }
+  }
+
+  // -----------------------------------------
+  // Event Handlers
+  // -----------------------------------------
+
+  handlePathSelected(event) {
+    this.selectedStep = event.target.value;
+    this.selectedPathIndex = event.detail.index;
+    const cpi = this.currentPathIndex;
+
+    // Check if the selected status requires showing the dependent picklist
+    if (this.shouldShowDependentPicklist()) {
+      // Handle the logic to show the dependent picklist and hide the "Save" button
+      this.displayDependentPicklist();
+    } else {
+      // Handle the logic to hide the dependent picklist and show the "Save" button
+      this.hideDependentPicklist();
+    }
+
+    this.pathNotClickable =
+      cpi == this.selectedPathIndex ||
+      (this.allPaths[cpi].allowTo.length > 0 &&
+        !this.allPaths[cpi].allowTo.includes(this.selectedPathIndex));
+    if (this.hideButton) {
+      this.toggleChangePathButton(this.pathNotClickable);
+    }
+  }
+
+  async handleSavePath() {
+    console.log("hi there, saving the path")
+    try {
+      console.log("inside the try block")
+      const saveButton = this.template.querySelector("lightning-button");
+      saveButton.disabled = true;
+      saveButton.label = "Saving...";
+      console.log("value of dependentPicklistValue: " + JSON.stringify(this.dependentPicklistValue.value))
+
+      const fields = {};
+      fields["Id"] = this.recordId;
+      fields[this.picklistPathFieldApiName] =
+        this.allPaths[this.selectedPathIndex].value;
+
+      let shouldSaveRecord = true;
+
+      // if the status requires a dependent picklist and the dependent picklist value is not set, then display the modal
+      if (this.showDependentPicklist == true && !this.dependentPicklistValue.value) {
+        console.log("value of dependentPicklistValue: " + this.dependentPicklistValue)
+        let result = await this.displayDependentModal();
+        if (result === "cancel") {
+          saveButton.disabled = false;
+          saveButton.label = this.buttonLabel;
+          shouldSaveRecord = false;
+        } else {
+          fields[this.dependentPicklistField] = result;
+        }
+      }
+
+      if (
+        shouldSaveRecord &&
+        this.objectApiName === "Case" &&
+        this.allPaths[this.selectedPathIndex].value === "Closed" &&
+        this.numVendors > 0
+      ) {
+        let result = await this.handleCasePaperworkComplete();
+        if (result === "cancel") {
+          saveButton.disabled = false;
+          saveButton.label = this.buttonLabel;
+          shouldSaveRecord = false;
+        }
+      }
+
+      if (shouldSaveRecord) {
+        await updateRecord({ fields }).then(() => {
+          this.pathNotClickable = true;
+          if (this.hideButton) {
+            this.toggleChangePathButton(this.pathNotClickable);
+          }
+          saveButton.disabled = false;
+          saveButton.label = this.buttonLabel;
+
+          this.dispatchEvent(
+            new ShowToastEvent({
+              title: "Success",
+              message: this.allPaths[this.selectedPathIndex].label,
+              variant: "success",
+            })
+          );
+          // if the path is the final path item, then fire the confetti
+          if (this.selectedPathIndex === this.allPaths.length - 1) {
+            this.basicCannon();
+          }
+          // if the object is case, then play the sound
+          if (
+            this.objectApiName === "Case" &&
+            this.selectedPathIndex === this.allPaths.length - 1
+          ) {
+            const audio = new Audio(successmario);
+            audio.play();
+          }
+        });
+      }
+
+      // Perform pre-save checks and additional logic here
+    } catch (error) {
+      console.log("Hit an error, just so you know.")
+      console.error("error: " + error);
+      // Handle errors appropriately
+      this.handleError(error);
+    }
+  }
+
+  handleCasePaperworkComplete() {
+    return new Promise((resolve, reject) => {
+      const modal = LightningConfirm.open({
+        message:
+          "This case has " +
+          this.numVendors +
+          " unpaid vendors. Are you sure you want to close this case?",
+        variant: "default", // default|warning|destructive
+        label: "Close Case",
+      });
+      modal.then((result) => {
+        if (result) {
+          resolve("OK");
+        } else {
+          reject("cancel");
+        }
+      });
+    });
+  }
+
+  handleError(error) {
+    console.error("Error: " + JSON.stringify(error));
+    this.template.querySelector("lightning-button").disabled = false;
+    this.template.querySelector("lightning-button").label = this.buttonLabel;
+    let errorMessage = "Action not saved!";
+
+    if (error) {
+      if (Array.isArray(error.body.output?.errors)) {
+        // If there are specific validation errors, use the first one as the error message
+        const firstError = error.body.output.errors[0];
+        if (firstError) {
+          errorMessage = firstError.message;
+        }
+      } else if (error.body.message) {
+        // If no specific validation errors, use the general error message
+        errorMessage = error.body.message;
+      }
+    }
+    console.error("Handled error:", JSON.stringify(error));
+    console.error(errorMessage);
+
+    this.dispatchEvent(
+      new ShowToastEvent({
+        title: "Action not saved!",
+        message: errorMessage,
+        variant: "error",
+      })
+    );
+  }
+
+  // -----------------------------------------
+  // Dependent Picklist Methods
+  // -----------------------------------------
+
+  displayDependentModal() {
+    return new Promise((resolve, reject) => {
+      DependentStageModal.open({
+        fieldName: this.dependentPicklistLabel,
+        size: "large",
+        fieldOptions: this.dependentPicklistValueSet,
+        dependentField: this.dependentPicklistField,
+        stage: this.dependentStatus,
+      })
+        .then((result) => {
+          resolve(result);
+        })
+        .catch((error) => {
+          console.error("error popping modal: " + error);
+          reject(error); 
+        });
+    });
+  }
+
+  shouldShowDependentPicklist() {
+    // Check if the selected status matches the dependent status
+    const shouldShow = this.selectedStep === this.dependentStatus;
+    return shouldShow;
+  }
+
+  displayDependentPicklist() {
+    this.showDependentPicklist = true;
+  }
+
+  hideDependentPicklist() {
+    this.showDependentPicklist = false;
+  }
+
+  // -----------------------------------------
+  // Getters
+  // -----------------------------------------
+
+  get dependentPicklistValue() {
+    // using uiRecordApi to get the value of the dependent picklist
+    // return null;
+    return this.dependentPicklistValue;
+  }
+
+
+  get dependentPicklistValueSet() {
+    return this.dependentPicklistValues;
+  }
+
+  get dependentPicklistLabel() {
+    return this.objectInformation.fields[this.dependentPicklistField].label;
+  }
 
   get numVendors() {
-    console.log(
-      "g debug>>>>>>> " +
-        this.record.data.fields.Number_of_unpaid_Vendors__c.value
-    ); // Add this line to debug
     return this.record.data.fields.Number_of_unpaid_Vendors__c.value;
+  }
+
+  get dependentPicklistFieldName() {
+    return this.objectApiName + "." + this.dependentPicklistField;
   }
 
   get currentPathIndex() {
@@ -98,198 +394,21 @@ export default class CustomPath extends LightningElement {
     return `Mark Status as ${this.selectedStep}`;
   }
 
-  renderedCallback() {
-    if (this.hideButton) {
-      this.toggleChangePathButton(this.pathNotClickable);
-    }
-  }
-
-  handlePathSelected(event) {
-    this.selectedStep = event.target.value;
-    this.selectedPathIndex = event.detail.index;
-    const cpi = this.currentPathIndex;
-    this.pathNotClickable =
-      cpi == this.selectedPathIndex ||
-      (this.allPaths[cpi].allowTo.length > 0 &&
-        !this.allPaths[cpi].allowTo.includes(this.selectedPathIndex));
-    if (this.hideButton) {
-      this.toggleChangePathButton(this.pathNotClickable);
-    }
-  }
-
-  toggleChangePathButton(toHide) {
-    this.template.querySelector("lightning-button").style = toHide
-      ? "display: none"
-      : "display: block";
-  }
-
-  handleSavePath() {
-    // make the button label 'Saving...' and disable it
-    this.template.querySelector("lightning-button").disabled = true;
-    this.template.querySelector("lightning-button").label = "Saving...";
-
-    const fields = {};
-    fields["Id"] = this.recordId;
-    fields[this.picklistPathFieldApiName] =
-      this.allPaths[this.selectedPathIndex].value;
-
-    if (
-      this.objectApiName === "Case" &&
-      this.allPaths[this.selectedPathIndex].value === "Closed" &&
-      this.numVendors > 0
-    ) {
-      this.handleCasePaperworkComplete();
-    } else {
-      updateRecord({ fields })
-        .then(() => {
-          console.log("Update successful. Now processing success block...");
-
-          // Additional logging to identify where the process might be getting stuck
-          console.log("Step 1");
-          this.pathNotClickable = true;
-          console.log("Step 2");
-          if (this.hideButton) {
-            console.log("Step 3");
-            this.toggleChangePathButton(this.pathNotClickable);
-          }
-          console.log("Step 4");
-          this.template.querySelector("lightning-button").disabled = false;
-          console.log("Step 5");
-          this.template.querySelector("lightning-button").label =
-            this.buttonLabel;
-          console.log("Step 6");
-
-          this.dispatchEvent(
-            new ShowToastEvent({
-              title: "Success",
-              message: this.allPaths[this.selectedPathIndex].label,
-              variant: "success",
-            })
-          );
-
-          // if the path is the final path item, then fire the confetti
-          if (this.selectedPathIndex === this.allPaths.length - 1) {
-            this.basicCannon();
-          }
-
-          // if the object is case, then play the sound
-          if (this.objectApiName === "Case" && this.selectedPathIndex === this.allPaths.length - 1) {
-            const audio = new Audio(
-              successmario
-            );
-            audio.play();
-          }
-          console.log("Success block processed successfully.");
-        })
-        .catch((error) => {
-          this.handleError(error);
-        });
-    }
-  }
-
-  async handleCasePaperworkComplete() {
-    const result = await LightningConfirm.open({
-      message:
-        "This case has " +
-        this.numVendors +
-        " unpaid vendors. Are you sure you want to close this case?",
-      variant: "default", // headerless
-      label: "Close Case",
-    });
-
-    //result is true if OK was clicked
-    if (result) {
-      //do something
-      this.handleCaseProceed();
-
-      // since we showed the modal, we want to do extra stuff here.
-    } else {
-      // close the modal
-      this.template.querySelector("lightning-button").disabled = false;
-      this.template.querySelector("lightning-button").label = this.buttonLabel;
-    }
-  }
-
-  handleCaseProceed() {
-    // make the button label 'Saving...' and disable it
-    this.template.querySelector("lightning-button").disabled = true;
-    this.template.querySelector("lightning-button").label = "Saving...";
-    const fields = {};
-    fields["Id"] = this.recordId;
-    fields[this.picklistPathFieldApiName] =
-      this.allPaths[this.selectedPathIndex].value;
-    fields["Override_Vendor_Payment__c"] = true;
-    updateRecord({ fields })
-      .then(() => {
-        this.pathNotClickable = true;
-        if (this.hideButton) {
-          this.toggleChangePathButton(this.pathNotClickable);
-        }
-        this.template.querySelector("lightning-button").disabled = false;
-        this.template.querySelector("lightning-button").label =
-          this.buttonLabel;
-
-        this.dispatchEvent(
-          new ShowToastEvent({
-            title: "Success",
-            message: this.allPaths[this.selectedPathIndex].label,
-            variant: "success",
-          })
-        );
-        this.basicCannon();
-        if (this.objectApiName === "Case") {
-          const audio = new Audio(
-            successmario);
-          console.log("audio volume: " + audio.volume);
-          audio.play();
-
-        }
-      })
-      .catch((error) => {
-        this.handleError(error);
-      });
-  }
-
-  handleError(error) {
-    console.log("Error: " + JSON.stringify(error));
-    this.template.querySelector("lightning-button").disabled = false;
-    let errorMessage = "Action not saved!";
-
-
-    if (error) {
-      if (Array.isArray(error.body.output?.errors)) {
-        // If there are specific validation errors, use the first one as the error message
-        const firstError = error.body.output.errors[0];
-        if (firstError) {
-          errorMessage = firstError.message;
-        }
-      } else if (error.body.message) {
-        // If no specific validation errors, use the general error message
-        errorMessage = error.body.message;
-      }
-    }
-
-    // Log the error for further analysis
-    console.error("Handled error:", JSON.stringify(error));
-
-    // Now you can use the errorMessage as needed in your component
-    console.error(errorMessage);
-
-    this.dispatchEvent(
-      new ShowToastEvent({
-        title: "Action not saved!",
-        message: errorMessage,
-        variant: "error",
-      })
-    );
-  }
-
   get objectQualifiedPathFieldApiName() {
     return this.objectApiName + "." + this.picklistPathFieldApiName;
   }
 
   get objectQualifiedPathFieldApiNames() {
     return [this.objectQualifiedPathFieldApiName];
+  }
+
+  // -----------------------------------------
+  // Helper Methods
+  // -----------------------------------------
+  toggleChangePathButton(toHide) {
+    this.template.querySelector("lightning-button").style = toHide
+      ? "display: none"
+      : "display: block";
   }
 
   parseAllPathsData(data) {
@@ -410,10 +529,8 @@ export default class CustomPath extends LightningElement {
         .split(",")
         .filter((s) => s.length > 0)
         .map((s) => s.trim());
-      //	console.log('\tfrom = ', from, '\t\ttoList = ', toList);
       ret.push(from, toList);
     }
-    // console.log( ret );
     return ret;
   }
 
@@ -426,22 +543,9 @@ export default class CustomPath extends LightningElement {
     [ [ 'a' ], [ 'b', 'c' ], [ 'b', '!' ], [ 'a', 'd' ], [ 'c' ], [ 'd' ] ]
      */
 
-  connectedCallback() {
-    Promise.all([loadScript(this, CONFETTI)])
-      .then(() => {
-        this.setUpCanvas();
-      })
-      
-      .catch((error) => {
-        this.dispatchEvent(
-          new ShowToastEvent({
-            title: "Error",
-            message: error.message,
-            variant: error,
-          })
-        );
-      });
-  }
+  // -----------------------------------------
+  // Confetti & Sound
+  // -----------------------------------------
 
   setUpCanvas() {
     var confettiCanvas = this.template.querySelector("canvas.confettiCanvas");

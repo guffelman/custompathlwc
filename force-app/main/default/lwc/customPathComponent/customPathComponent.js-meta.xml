@@ -1,47 +1,61 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>58.0</apiVersion>
-    <isExposed>true</isExposed>
-    <description>Restrict Path By Either Field Dependencies and/or Navigation Rule Property</description>
-    <targets>
-        <target>lightning__RecordPage</target>
-    </targets>
-    <targetConfigs>
-        <targetConfig targets="lightning__RecordPage">
-            <property
-                    name="picklistPathFieldApiName"
-                    type="String"
-                    label="Path Field (Picklist Type) API Name"
-                    description="Please enter field api name which is case sensitive"
-            />
-            <property
-                    name="recordTypeId"
-                    type="String"
-                    label="Record Type Id (Default to master type)"
-                    description="Please enter Record Type Id"
-                    default="012000000000000AAA"
-            />
-            <property
-                    name="pathChangeButtonLabel"
-                    type="String"
-                    label="Path Change Button Label"
-                    description="Please enter change path button label"
-                    default="Change"
-            />
-            <property
-                    name="hideButton"
-                    label="Hide Button Instead of Disable"
-                    description="Hide Button When Not-Allowed Instead Of Disabled"
-                    type="Boolean"
-                    default="false"
-            />
-            <property
-                    name="navigationRule"
-                    label="Navigation Rules"
-                    description="a={b, c}, b=!{a, d} where a, b are the values of picklist. This rule says: a can go to b or c; b cannot go to a and d, the rest can go anywhere"
-                    type="String"
-                    default=""
-            />
-        </targetConfig>
-    </targetConfigs>
+        <apiVersion>58.0</apiVersion>
+        <isExposed>true</isExposed>
+        <description>Restrict Path By Either Field Dependencies and/or Navigation Rule Property</description>
+        <targets>
+                <target>lightning__RecordPage</target>
+        </targets>
+        <targetConfigs>
+                <targetConfig targets="lightning__RecordPage">
+                        <property
+                                name="picklistPathFieldApiName"
+                                type="String"
+                                label="Path Field (Picklist Type) API Name"
+                                description="Please enter field api name which is case sensitive"
+                        />
+                        <property
+                                name="recordTypeId"
+                                type="String"
+                                label="Record Type Id (Default to master type)"
+                                description="Please enter Record Type Id"
+                                default="012000000000000AAA"
+                        />
+                        <property
+                                name="pathChangeButtonLabel"
+                                type="String"
+                                label="Path Change Button Label"
+                                description="Please enter change path button label"
+                                default="Change"
+                        />
+                        <property
+                                name="hideButton"
+                                label="Hide Button Instead of Disable"
+                                description="Hide Button When Not-Allowed Instead Of Disabled"
+                                type="Boolean"
+                                default="false"
+                        />
+                        <property
+                                name="navigationRule"
+                                label="Navigation Rules"
+                                description="a={b, c}, b=!{a, d} where a, b are the values of picklist. This rule says: a can go to b or c; b cannot go to a and d, the rest can go anywhere"
+                                type="String"
+                                default=""
+                        />
+                        <property
+                                name="dependentStatus"
+                                label="Path Dependant Status"
+                                description="Status that should show the dependant picklist. Disabled if blank."
+                                type="String"
+                                default=""
+                />
+                        <property
+                                name="dependentPicklistField"
+                                label="Path Dependant Picklist Field"
+                                description="Dependant Picklist Field API Name. Disabled if blank, and needs dependant status."
+                                type="String"
+                                default=""
+                        />
+                </targetConfig>
+        </targetConfigs>
 </LightningComponentBundle>

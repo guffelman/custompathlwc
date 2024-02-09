@@ -1,13 +1,63 @@
 .path-component {
     background-color: white;
-    padding: 16px;
-    border-radius: 5px;
+    height: auto; /* Allow the height to grow as needed */
+    overflow: auto;
+    border-radius: 6px;
+    padding: 1rem; /* Use relative units for padding */
 }
 
 .path-button {
-    margin-left: 20px;
+    max-width: 300px;
+    margin-left: 3px; /* Add a bit more space to the left of the button */
 }
 
-.confettiCanvas{
+.confettiCanvas {
     position: fixed;
 }
+
+@media screen and (max-width: 1025px) {
+    .path-component {
+        display: flex;
+        justify-content: column;
+        padding: 0.5rem; /* Reduce padding on smaller screens */
+        overflow: scroll; /* Add a scrollbar when the content overflows in either direction */
+        -webkit-overflow-scrolling: touch; 
+        /* allow regular scrolling */
+
+    }
+
+    .path-button {
+        width: 100%; /* Set the width to 100% of the parent on smaller screens */
+        font-size: 0.8rem; /* Reduce font size on smaller screens */
+        max-height: 20px; /* Limit the height of the button on smaller screens */
+    }
+}
+
+/* For macOS */
+::-webkit-scrollbar {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    border-radius: 6px;
+    background-color: rgba(0, 0, 0, 0.801);
+    -webkit-box-shadow: 0 0 1px rgba(255, 255, 255, .5);
+    width: 10px; /* Adjust the width of the scrollbar thumb */
+}
+/* For Windows */
+::-webkit-scrollbar {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    border-radius: 2px;
+    background-color: rgba(0, 0, 0, 0.801);
+    -webkit-box-shadow: 0 0 1px rgba(255, 255, 255, .5);
+}
+
+
+
