@@ -3,7 +3,7 @@
     margin-top: 20px;
 }
 .radial-group{
-    margin-top: 20px;
+/* nothing here yet */
 }
 
 .infotext{
@@ -16,4 +16,35 @@
 .button{
     margin-left: 10px;
     margin-right: 10px;
+}
+
+.flex-container {
+    display: flex;
+    flex-direction: row;
+    align-items: start;
+}
+
+.dependent-text{
+    padding-left: 40px;
+}
+
+.slds-input-long{
+    /* looks like a long text area field */
+    width: 40vw;
+    min-height: 100px;
+
+    
+}
+
+.error-text{
+    color: red;
+    font-size: 12px;
+    margin-top: 5px;
+
+}
+
+@media (max-width: 600px) {
+    .flex-container {
+        flex-direction: column;
+    }
 }

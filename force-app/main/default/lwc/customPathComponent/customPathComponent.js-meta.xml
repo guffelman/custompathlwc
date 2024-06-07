@@ -45,7 +45,7 @@
                         <property
                                 name="dependentStatus"
                                 label="Path Dependant Status"
-                                description="Status that should show the dependant picklist. Disabled if blank."
+                                description="Status that should show the dependant picklist. Disabled if blank. Can only be one."
                                 type="String"
                                 default=""
                 />
@@ -55,6 +55,30 @@
                                 description="Dependant Picklist Field API Name. Disabled if blank, and needs dependant status."
                                 type="String"
                                 default=""
+                        />
+                        <property name="dependentTextField"
+                                label="Path Dependant Text Field"
+                                description="Dependant Text Field API Name. Disabled if blank, and needs dependant status."
+                                type="String"
+                                default=""
+                        />
+                        <property name="dependentTextFieldType"
+                                label="Path Dependant Text Field Type"
+                                description="Dependant Text Field Type. Options: smallText, longText. smallText if blank."
+                                type="String"
+                                default="smallText"
+                        />
+                        <property name="dependentTextFieldRequired"
+                                label="Path Dependant Text Field Required"
+                                description="Dependant Text Field Required. Options: true, false. false if blank."
+                                type="Boolean"
+                                default="false"
+                        />
+                        <property name="celebrationAnimation"
+                                label="Path Celebration Animation"
+                                description="Path Celebration Animation. Options: confetti, fireworks. confetti if blank."
+                                type="Boolean"
+                                default="false"
                         />
                 </targetConfig>
         </targetConfigs>

@@ -1,23 +1,40 @@
 <template>
     <lightning-modal-header label="Hang on a sec!"></lightning-modal-header>
     <lightning-modal-body> 
+        <template if:true={error}>
+            <p class="error-text">{error}</p>
+        </template>
         <!-- display fieldOptions as a radial selection -->
         <p class="infotext">
             In order to proceed to {stage}, you must select a value for {fieldName}. Please select from the following options:
         </p>
-        <div class="radial-group">
-        <template for:each={fieldOptions} for:item="fieldOption">
-            
-            <lightning-input class="radial" type="radio" name="fieldOptionGroup" key={fieldOption.value} label={fieldOption.label} value={fieldOption.value}
-                             onchange={handleFieldChange}></lightning-input>
-            
-        </template>
-    </div>
+        <div class="flex-container">
+            <div class="radial-group">
+                <template for:each={fieldOptions} for:item="fieldOption">
+                    <lightning-input class="radial" type="radio" name="fieldOptionGroup" key={fieldOption.value} label={fieldOption.label} value={fieldOption.value}
+                                     onchange={handleFieldChange}></lightning-input>
+                </template>
+            </div>
+            <template if:true={hasDependentTextField}>
+                <template if:true={isDependentTextFieldTextArea}>
+                    <div class="dependent-text">
+                        <lightning-textarea label={dependentTextFieldLabel} value={dependentTextFieldValue} class={dependentTextFieldClass}
+                                            onchange={handleDependentTextFieldChange}></lightning-textarea>
+                    </div>
+                </template>
+                <template if:false={isDependentTextFieldTextArea}>
+                    <div class="dependent-text">
+                        <lightning-input type={getDependentTextFieldType} label={getDependentTextFieldLabel} value={dependentTextFieldValue} class={dependentTextFieldClass}
+                                         onchange={handleDependentTextFieldChange}></lightning-input>
+                    </div>
+                </template>
+            </template>
+        </div>
     </lightning-modal-body>
     <lightning-modal-footer>
         <div class="slds-align_absolute-center">
             <lightning-button class="button" label="Cancel" onclick={handleCancel}></lightning-button>
-            <lightning-button class="button" label="OK" onclick={handleOkay}></lightning-button>
+            <lightning-button class="button" label="OK" onclick={handleSave}></lightning-button>
         </div>
     </lightning-modal-footer>
 </template>

@@ -1,6 +1,8 @@
 // customPathDependentStageModal.js
 // Garrett Uffelman (garrett.uffelman@customtruck.com)
-// Last Modified: 2024-01-05
+// Last Modified: 2024-05-04
+// Change History:
+// 2024-05-04: Added functionality for dependentTextField. Cleaned up cancel code. 
 // Desc: Custom modal for dependent stage picklist. Required for customPathComponent to work properly. 
 
 import { api } from 'lwc';
@@ -12,14 +14,33 @@ export default class DependentStageModal extends LightningModal {
     @api selectedValue;
     @api stage;
     @api dependentField;
+    @api dependentTextField;
+    @api dependentTextFieldType;
+    @api dependentTextFieldValue;
+    @api dependentTextFieldRequired;
+    @api dependentTextFieldLabel;
 
-    handleOkay() {
-        // consider dispatching a custom event here instead of just the mutated this.selectedValue
-        this.close(this.selectedValue);
+    error;
+
+
+
+    handleSave(){
+        this.error = undefined;
+        if (this.selectedValue != undefined) {
+            if (this.dependentTextFieldRequired && this.dependentTextFieldValue == undefined) {
+                this.error = 'Please enter a value for ' + this.dependentTextField;
+                return;
+            } else {
+                this.close(this.result);
+            }
+        } else {
+            this.error = 'Please select a value for ' + this.fieldName;
+        }
     }
 
+
     handleCancel() {
-        this.close('cancel');
+        this.close();
 
     }
 
@@ -27,30 +48,60 @@ export default class DependentStageModal extends LightningModal {
         this.selectedValue = event.target.value;
     }
 
-    // if the user clicks outside the modal, close it
-    handleOutsideClick() {
-        this.close('cancel');
+    handleDependentTextFieldChange(event) {
+        this.dependentTextFieldValue = event.target.value;
     }
+
 
     // if the user presses escape, close the modal
     handleKeydown(event) {
         if (event.key === 'Escape') {
-            this.close('cancel');
+            this.close();
         }
-    }
-
-    // if the user presses enter, close the modal
-    handleEnter(event) {
         if (event.key === 'Enter') {
-            this.close(this.selectedValue);
+            this.handleSave();
+
         }
     }
 
-    // handle Outside Click, Escape, and Enter.. also handle X button click
 
-    connectedCallback() {
-        // listen for the events that close the modal
-        // document.addEventListener('click', this.handleOutsideClick.bind(this));
+    // getter to determine if we have a dependent text fiel
+    get hasDependentTextField() {
+        // return true if we have a dependentTextField
+        return this.dependentTextField !== undefined;
+    }
+
+    get dependentTextFieldClass() {
+        switch (this.dependentTextFieldType) {
+            case 'smallText':
+                return 'slds-input';
+            case 'longText':
+                return 'slds-input-long';
+            default:
+                return 'slds-input';
+        }
+    }
+
+    get isDependentTextFieldTextArea() {
+        switch (this.dependentTextFieldType) {
+            case 'smallText':
+                return false;
+            case 'longText':
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    get dependentPicklistLabel() {
+        return this.dependentPicklistLabel;
+    }
+
+    get result() {
+        return {
+            selectedValue: this.selectedValue,
+            dependentTextFieldValue: this.dependentTextFieldValue
+        };
     }
 
 

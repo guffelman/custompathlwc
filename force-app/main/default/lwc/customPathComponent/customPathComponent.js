@@ -1,11 +1,10 @@
 // customPathComponent.js
 // Garrett Uffelman (garrett.uffelman@customtruck.com)
-// Last Modified: 2024-01-05
-// Desc: Updated the custom path component to include dependent picklist functionality. 
-//       Cleaned up the code and added comments for clarity. 
+// Last Modified: 2024-06-07
+// Desc: Allow modal to pop when dependent text field is undefined.
+//
 
 import { LightningElement, api, wire, track } from "lwc";
-// at some point, we need to look at uiRecordAPI as it is deprecated
 import { getRecord, updateRecord } from "lightning/uiRecordApi";
 import { getPicklistValues, getObjectInfo } from "lightning/uiObjectInfoApi";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
@@ -27,9 +26,12 @@ export default class CustomPath extends LightningElement {
   @api hideButton; // whether to hide the button or just to disable the button
   @api pathChangeButtonLabel;
   @api navigationRule;
-  @api picklistDependencies;
   @api dependentStatus;
   @api dependentPicklistField;
+  @api dependentTextField;
+  @api dependentTextFieldType;
+  @api dependentTextFieldRequired;
+  @api celebrationAnimation;
 
   @track currentPath;
   @track selectedStep = "";
@@ -37,10 +39,10 @@ export default class CustomPath extends LightningElement {
   @track pathNotClickable = true;
   @track showDependentPicklist = false;
 
-
   selectedPathIndex = -1;
   dependentPicklistValues = [];
   dependentPicklistValue;
+  dependentTextFieldValue;
 
   // -----------------------------------------
   // Wire Methods
@@ -69,18 +71,15 @@ export default class CustomPath extends LightningElement {
 
   @wire(getRecord, {
     recordId: "$recordId",
-    fields: [vendorfield] // and any dependent fields
-
+    fields: "$vendorFieldGetter", // and any dependent fields
   })
   record;
 
   @wire(getRecord, {
     recordId: "$recordId",
     fields: "$dependentPicklistFieldName",
-  }) 
+  })
   dependentPicklistValue;
-
-
 
   @wire(getPicklistValues, {
     recordTypeId: "$recordTypeId",
@@ -115,20 +114,11 @@ export default class CustomPath extends LightningElement {
     }
   }
 
-
-
-
   // -----------------------------------------
   // Connected Callback & Rendered Callback
   // -----------------------------------------
 
   connectedCallback() {
-    if (this.picklistDependencies) {
-      // if the picklistDependencies is defined and the picklistDependencyIndex is the same as the currentPathIndex, then hide the save button
-      if (this.picklistDependencyIndex == this.currentPathIndex + 1) {
-        // do nothing, the button will be hidden
-      }
-    }
     Promise.all([loadScript(this, CONFETTI)])
       .then(() => {
         this.setUpCanvas();
@@ -178,14 +168,10 @@ export default class CustomPath extends LightningElement {
   }
 
   async handleSavePath() {
-    console.log("hi there, saving the path")
     try {
-      console.log("inside the try block")
       const saveButton = this.template.querySelector("lightning-button");
       saveButton.disabled = true;
       saveButton.label = "Saving...";
-      console.log("value of dependentPicklistValue: " + JSON.stringify(this.dependentPicklistValue.value))
-
       const fields = {};
       fields["Id"] = this.recordId;
       fields[this.picklistPathFieldApiName] =
@@ -194,15 +180,18 @@ export default class CustomPath extends LightningElement {
       let shouldSaveRecord = true;
 
       // if the status requires a dependent picklist and the dependent picklist value is not set, then display the modal
-      if (this.showDependentPicklist == true && !this.dependentPicklistValue.value) {
-        console.log("value of dependentPicklistValue: " + this.dependentPicklistValue)
+      if (
+        this.showDependentPicklist == true &&
+        !this.dependentPicklistValue.value
+      ) {
         let result = await this.displayDependentModal();
-        if (result === "cancel") {
+        if (result == undefined) {
           saveButton.disabled = false;
           saveButton.label = this.buttonLabel;
           shouldSaveRecord = false;
         } else {
-          fields[this.dependentPicklistField] = result;
+          fields[this.dependentPicklistField] = result.selectedValue;
+          fields[this.dependentTextField] = result.dependentTextFieldValue;
         }
       }
 
@@ -238,7 +227,9 @@ export default class CustomPath extends LightningElement {
           );
           // if the path is the final path item, then fire the confetti
           if (this.selectedPathIndex === this.allPaths.length - 1) {
-            this.basicCannon();
+            if (this.celebrationAnimation) {
+              this.basicCannon();
+            }
           }
           // if the object is case, then play the sound
           if (
@@ -253,7 +244,6 @@ export default class CustomPath extends LightningElement {
 
       // Perform pre-save checks and additional logic here
     } catch (error) {
-      console.log("Hit an error, just so you know.")
       console.error("error: " + error);
       // Handle errors appropriately
       this.handleError(error);
@@ -316,19 +306,32 @@ export default class CustomPath extends LightningElement {
 
   displayDependentModal() {
     return new Promise((resolve, reject) => {
-      DependentStageModal.open({
+      let options = {
         fieldName: this.dependentPicklistLabel,
         size: "large",
         fieldOptions: this.dependentPicklistValueSet,
         dependentField: this.dependentPicklistField,
         stage: this.dependentStatus,
-      })
+      };
+
+      if (this.dependentTextField != undefined) {
+        options.dependentTextField = this.dependentTextField;
+        options.dependentTextFieldRequired = this.dependentTextFieldRequired;
+        options.dependentTextFieldType = this.dependentTextFieldType;
+        options.dependentTextFieldLabel = this.dependentTextFieldLabel;
+      }
+
+      DependentStageModal.open(options)
         .then((result) => {
-          resolve(result);
+          if (result === "cancel") {
+            reject("cancel");
+          } else {
+            resolve(result);
+          }
         })
         .catch((error) => {
           console.error("error popping modal: " + error);
-          reject(error); 
+          reject(error);
         });
     });
   }
@@ -357,13 +360,16 @@ export default class CustomPath extends LightningElement {
     return this.dependentPicklistValue;
   }
 
-
   get dependentPicklistValueSet() {
     return this.dependentPicklistValues;
   }
 
   get dependentPicklistLabel() {
     return this.objectInformation.fields[this.dependentPicklistField].label;
+  }
+
+  get dependentTextFieldLabel() {
+    return this.objectInformation.fields[this.dependentTextField].label;
   }
 
   get numVendors() {
@@ -400,6 +406,13 @@ export default class CustomPath extends LightningElement {
 
   get objectQualifiedPathFieldApiNames() {
     return [this.objectQualifiedPathFieldApiName];
+  }
+
+  get vendorFieldGetter() {
+    // if object is case, then proceed
+    if (this.objectApiName === "Case") {
+      return vendorfield;
+    }
   }
 
   // -----------------------------------------
