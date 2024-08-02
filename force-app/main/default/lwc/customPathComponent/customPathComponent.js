@@ -293,7 +293,7 @@ if (this.showDependentPicklist) {
           "This case has " +
           this.numVendors +
           " unpaid vendors. Are you sure you want to close this case?",
-        variant: "default", // default|warning|destructive
+        variant: "default", // default|warning|destructive 
         label: "Close Case",
       });
       modal.then((result) => {

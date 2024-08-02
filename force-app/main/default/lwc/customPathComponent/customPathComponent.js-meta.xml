@@ -48,7 +48,7 @@
                                 description="Use the following formula: Field[Dependent_Picklist][Dependent_Text_Field]. Dependent Text Fields are not required.
                                 For example: On Hold[On_Hold_Reason__c], Closed Lost[Closed_Lost_Reason__c][Lost_Description__c]"
                                 type="String"
-                                default=""
+                                default="" 
                 />
                         <property name="dependentTextFieldType"
                                 label="Path Dependant Text Field Type"

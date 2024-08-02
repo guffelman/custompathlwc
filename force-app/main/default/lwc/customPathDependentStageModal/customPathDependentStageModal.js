@@ -85,7 +85,7 @@ export default class DependentStageModal extends LightningModal {
     get isDependentTextFieldTextArea() {
         switch (this.dependentTextFieldType) {
             case 'smallText':
-                return false;
+                return false; 
             case 'longText':
                 return true;
             default:

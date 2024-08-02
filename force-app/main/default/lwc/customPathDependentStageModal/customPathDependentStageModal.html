@@ -15,7 +15,7 @@
                                      onchange={handleFieldChange}></lightning-input>
                 </template>
             </div>
-            <template if:true={hasDependentTextField}>
+            <template if:true={hasDependentTextField}> 
                 <template if:true={isDependentTextFieldTextArea}>
                     <div class="dependent-text">
                         <lightning-textarea label={dependentTextFieldLabel} value={dependentTextFieldValue} class={dependentTextFieldClass}

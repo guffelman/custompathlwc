@@ -35,7 +35,7 @@
 
 /* For macOS */
 ::-webkit-scrollbar {
-    -webkit-appearance: none;
+    -webkit-appearance: none; 
     width: 20px;
     height: 4px;
 }
