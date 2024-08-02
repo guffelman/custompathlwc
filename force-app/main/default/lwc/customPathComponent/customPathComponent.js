@@ -1,12 +1,15 @@
 // customPathComponent.js
 // Garrett Uffelman (garrett.uffelman@customtruck.com)
-// Last Modified: 2024-06-07
-// Desc: Allow modal to pop when dependent text field is undefined.
+// Last Modified: 2024-06-27
+// Desc: Modified the path component to be able to accept multiple dependent picklist fields and text fields. New dependentFormula created.
 //
 
 import { LightningElement, api, wire, track } from "lwc";
-import { getRecord, updateRecord } from "lightning/uiRecordApi";
-import { getPicklistValues, getObjectInfo } from "lightning/uiObjectInfoApi";
+import { getRecord, updateRecord, getFieldValue } from "lightning/uiRecordApi";
+import {
+  getObjectInfo,
+  getPicklistValuesByRecordType,
+} from "lightning/uiObjectInfoApi";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import LightningConfirm from "lightning/confirm";
 import vendorfield from "@salesforce/schema/Case.Number_of_unpaid_Vendors__c";
@@ -26,12 +29,11 @@ export default class CustomPath extends LightningElement {
   @api hideButton; // whether to hide the button or just to disable the button
   @api pathChangeButtonLabel;
   @api navigationRule;
-  @api dependentStatus;
-  @api dependentPicklistField;
-  @api dependentTextField;
+  @api dependentFormula; // formula of dependent statuses, and dependent picklist fields, and dependent text fields.
   @api dependentTextFieldType;
   @api dependentTextFieldRequired;
   @api celebrationAnimation;
+  @api picklists;
 
   @track currentPath;
   @track selectedStep = "";
@@ -41,13 +43,14 @@ export default class CustomPath extends LightningElement {
 
   selectedPathIndex = -1;
   dependentPicklistValues = [];
-  dependentPicklistValue;
-  dependentTextFieldValue;
+  dependentPicklistValueSet = [];
+
 
   // -----------------------------------------
   // Wire Methods
   // -----------------------------------------
 
+  // Gets general info about the object. Used to get the labels of fields.
   @wire(getObjectInfo, { objectApiName: "$objectApiName" })
   objectInfo({ error, data }) {
     if (data) {
@@ -57,6 +60,7 @@ export default class CustomPath extends LightningElement {
     }
   }
 
+  // Used to get the current value of the (status) picklist field. Used to determine the current path status. (IE: On Hold, Active, etc...)
   @wire(getRecord, {
     recordId: "$recordId",
     fields: "$objectQualifiedPathFieldApiName",
@@ -69,46 +73,60 @@ export default class CustomPath extends LightningElement {
     }
   }
 
+  // For Case records, get the number of unpaid vendors. CTOS Specific.
   @wire(getRecord, {
     recordId: "$recordId",
-    fields: "$vendorFieldGetter", // and any dependent fields
+    optionalFields: [vendorfield],
   })
-  record;
+  obtainedRecord({ error, data }) {
+   // if the data is not there, then fail silently
+    if (data) {
+      this.record = data;
+      console.log(data);
+      } else if (error) {
+      console.error("Error fetching record:", error);
+    }
+  }
 
+  // Used to get the values of all dependent picklists, that way we don't display the modal if the value is already set.
   @wire(getRecord, {
     recordId: "$recordId",
     fields: "$dependentPicklistFieldName",
   })
-  dependentPicklistValue;
-
-  @wire(getPicklistValues, {
-    recordTypeId: "$recordTypeId",
-    fieldApiName: "$objectQualifiedPathFieldApiName",
-  })
-  fetchAllPaths({ error, data }) {
+  gotValue({ error, data }) {
     if (data) {
-      this.allPaths = this.parseAllPathsData(data);
+      this.dependentPicklistValues = data.fields;
     } else if (error) {
-      console.error(
-        "fail to obtain picklist values with fieldApiName = ",
-        this.objectQualifiedPathFieldApiName,
-        " on record-type-id = ",
-        this.recordTypeId
-      );
-      console.error(error);
+      console.error("Error fetching picklist values:", error);
     }
   }
 
-  @wire(getPicklistValues, {
+  // Used to get picklist options for the dependent picklists. Gets all picklist options for the object & record type, as I struggled to do more than one with the other method.
+  @wire(getPicklistValuesByRecordType, {
+    objectApiName: "$objectApiName",
     recordTypeId: "$recordTypeId",
-    fieldApiName: "$dependentPicklistFieldName",
   })
-  wiredPicklistValues({ error, data }) {
+  wiredPicklistValuesByRecordType({ error, data }) {
     if (data) {
-      this.dependentPicklistValues = data.values.map((item) => ({
-        label: item.label,
-        value: item.value,
-      }));
+      this.picklists = data.picklistFieldValues;
+
+      if (this.dependentFormula) {
+        const parsedFormula = this.parsedependentFormula();
+        let dependentFields = Object.keys(parsedFormula).map((item) => {
+          return parsedFormula[item].dependentPicklist;
+        });
+
+        this.dependentPicklistValueSet = dependentFields.reduce((acc, item) => {
+          acc[item] = {
+            values: this.picklists[item] ? this.picklists[item].values : {},
+          };
+          return acc;
+        }, {});
+      }
+
+      this.allPaths = this.parseAllPathsData(
+        this.picklists[this.picklistPathFieldApiName]
+      );
     } else if (error) {
       console.error("Error fetching picklist values", error);
     }
@@ -144,6 +162,7 @@ export default class CustomPath extends LightningElement {
   // Event Handlers
   // -----------------------------------------
 
+  // Executed whenever the user clicks on a path item. This will update the selectedStep and selectedPathIndex.
   handlePathSelected(event) {
     this.selectedStep = event.target.value;
     this.selectedPathIndex = event.detail.index;
@@ -152,10 +171,10 @@ export default class CustomPath extends LightningElement {
     // Check if the selected status requires showing the dependent picklist
     if (this.shouldShowDependentPicklist()) {
       // Handle the logic to show the dependent picklist and hide the "Save" button
-      this.displayDependentPicklist();
+      this.showDependentPicklist = true;
     } else {
       // Handle the logic to hide the dependent picklist and show the "Save" button
-      this.hideDependentPicklist();
+      this.showDependentPicklist = false;
     }
 
     this.pathNotClickable =
@@ -167,40 +186,59 @@ export default class CustomPath extends LightningElement {
     }
   }
 
+  // Executed whenever the user hits 'Save'. This will update the record with the new path status, and trigger the modal if necessary.
   async handleSavePath() {
     try {
       const saveButton = this.template.querySelector("lightning-button");
       saveButton.disabled = true;
       saveButton.label = "Saving...";
+  
       const fields = {};
       fields["Id"] = this.recordId;
       fields[this.picklistPathFieldApiName] =
         this.allPaths[this.selectedPathIndex].value;
-
+  
       let shouldSaveRecord = true;
+  
+// Check if the status requires a dependent picklist and if it's not set, display modal
+if (this.showDependentPicklist) {
+  let result = await this.displayDependentModal({
+    fieldname: this.getFieldLabel(
+      this.parsedependentFormula()[this.selectedStep].dependentPicklist
+    ),
+    size: "large",
+    dependentPicklistValueSet:
+      this.dependentPicklistValueSet[
+        this.parsedependentFormula()[this.selectedStep].dependentPicklist
+      ].values,
+    dependentPicklistField:
+      this.parsedependentFormula()[this.selectedStep].dependentPicklist,
+    dependentTextField:
+      this.parsedependentFormula()[this.selectedStep].dependentTextField,
+    dependentTextFieldLabel:
+      this.parsedependentFormula()[this.selectedStep].dependentTextField
+        ? this.getFieldLabel(this.parsedependentFormula()[this.selectedStep].dependentTextField)
+        : null,
+    dependentTextFieldType: this.dependentTextFieldType,
+    dependentTextFieldRequired: this.dependentTextFieldRequired,
+    dependentStatus: this.selectedStep,
+  });
 
-      // if the status requires a dependent picklist and the dependent picklist value is not set, then display the modal
-      if (
-        this.showDependentPicklist == true &&
-        !this.dependentPicklistValue.value
-      ) {
-        let result = await this.displayDependentModal();
-        if (result == undefined) {
+  
+        if (!result) {
+          // Modal was canceled or closed
           saveButton.disabled = false;
           saveButton.label = this.buttonLabel;
           shouldSaveRecord = false;
         } else {
-          fields[this.dependentPicklistField] = result.selectedValue;
-          fields[this.dependentTextField] = result.dependentTextFieldValue;
+          // Update fields with dependent picklist and text field values
+          fields[this.parsedependentFormula()[this.selectedStep].dependentPicklist] = result.selectedValue;
+          fields[this.parsedependentFormula()[this.selectedStep].dependentTextField] = result.dependentTextFieldValue;
         }
       }
-
-      if (
-        shouldSaveRecord &&
-        this.objectApiName === "Case" &&
-        this.allPaths[this.selectedPathIndex].value === "Closed" &&
-        this.numVendors > 0
-      ) {
+  
+      // Additional checks specific to Case object
+      if (shouldSaveRecord && this.objectApiName === "Case" && this.allPaths[this.selectedPathIndex].value === "Closed" && this.numVendors > 0) {
         let result = await this.handleCasePaperworkComplete();
         if (result === "cancel") {
           saveButton.disabled = false;
@@ -208,7 +246,8 @@ export default class CustomPath extends LightningElement {
           shouldSaveRecord = false;
         }
       }
-
+  
+      // Proceed with saving the record
       if (shouldSaveRecord) {
         await updateRecord({ fields }).then(() => {
           this.pathNotClickable = true;
@@ -217,7 +256,7 @@ export default class CustomPath extends LightningElement {
           }
           saveButton.disabled = false;
           saveButton.label = this.buttonLabel;
-
+  
           this.dispatchEvent(
             new ShowToastEvent({
               title: "Success",
@@ -225,31 +264,28 @@ export default class CustomPath extends LightningElement {
               variant: "success",
             })
           );
-          // if the path is the final path item, then fire the confetti
+  
+          // Perform additional actions upon successful save if needed
           if (this.selectedPathIndex === this.allPaths.length - 1) {
             if (this.celebrationAnimation) {
               this.basicCannon();
             }
           }
-          // if the object is case, then play the sound
-          if (
-            this.objectApiName === "Case" &&
-            this.selectedPathIndex === this.allPaths.length - 1
-          ) {
+          if (this.objectApiName === "Case" && this.selectedPathIndex === this.allPaths.length - 1) {
             const audio = new Audio(successmario);
             audio.play();
           }
         });
       }
-
-      // Perform pre-save checks and additional logic here
+  
     } catch (error) {
-      console.error("error: " + error);
-      // Handle errors appropriately
-      this.handleError(error);
+      console.error("Error: ", error);
+      this.handleError(error); // Call your error handling method
     }
   }
+  
 
+  // For CTOS cases, when we attempt to close a case with unpaid vendors, we need to display a modal to confirm the action.
   handleCasePaperworkComplete() {
     return new Promise((resolve, reject) => {
       const modal = LightningConfirm.open({
@@ -264,70 +300,84 @@ export default class CustomPath extends LightningElement {
         if (result) {
           resolve("OK");
         } else {
-          reject("cancel");
+          resolve("cancel");
         }
       });
     });
   }
 
   handleError(error) {
-    console.error("Error: " + JSON.stringify(error));
-    this.template.querySelector("lightning-button").disabled = false;
-    this.template.querySelector("lightning-button").label = this.buttonLabel;
-    let errorMessage = "Action not saved!";
-
-    if (error) {
-      if (Array.isArray(error.body.output?.errors)) {
-        // If there are specific validation errors, use the first one as the error message
-        const firstError = error.body.output.errors[0];
-        if (firstError) {
-          errorMessage = firstError.message;
+    try {
+      console.error("Error: " + JSON.stringify(error));
+      this.template.querySelector("lightning-button").disabled = false;
+      this.template.querySelector("lightning-button").label = this.buttonLabel;
+      let errorMessage = "Action not saved!";
+  
+      if (error) {
+        if (Array.isArray(error.body.output?.errors)) {
+          // If there are specific validation errors, use the first one as the error message
+          const firstError = error.body.output.errors[0];
+          if (firstError) {
+            errorMessage = firstError.message;
+          }
+        } else if (error.body.message) {
+          // If no specific validation errors, use the general error message
+          errorMessage = error.body.message;
         }
-      } else if (error.body.message) {
-        // If no specific validation errors, use the general error message
-        errorMessage = error.body.message;
       }
+      console.error("Handled error:", JSON.stringify(error));
+      console.error(errorMessage);
+  
+      this.dispatchEvent(
+        new ShowToastEvent({
+          title: "Action not saved!",
+          message: errorMessage,
+          variant: "error",
+        })
+      );
+    } catch (e) {
+      console.error("Unexpected error:", e);
+      this.dispatchEvent(
+        new ShowToastEvent({
+          title: "Action not saved!",
+          message: "An unexpected error occurred.",
+          variant: "error",
+        })
+      );
     }
-    console.error("Handled error:", JSON.stringify(error));
-    console.error(errorMessage);
-
-    this.dispatchEvent(
-      new ShowToastEvent({
-        title: "Action not saved!",
-        message: errorMessage,
-        variant: "error",
-      })
-    );
   }
 
   // -----------------------------------------
   // Dependent Picklist Methods
   // -----------------------------------------
 
-  displayDependentModal() {
+  // Displays the dependent modal for the field specified in the options. Returns a promise that resolves with the selected value.
+  displayDependentModal(options) {
+    const {
+      fieldname,
+      size,
+      dependentPicklistValueSet,
+      dependentPicklistField,
+      dependentTextField,
+      dependentTextFieldLabel,
+      dependentTextFieldType,
+      dependentTextFieldRequired,
+      dependentStatus,
+    } = options;
     return new Promise((resolve, reject) => {
-      let options = {
-        fieldName: this.dependentPicklistLabel,
-        size: "large",
-        fieldOptions: this.dependentPicklistValueSet,
-        dependentField: this.dependentPicklistField,
-        stage: this.dependentStatus,
-      };
-
-      if (this.dependentTextField != undefined) {
-        options.dependentTextField = this.dependentTextField;
-        options.dependentTextFieldRequired = this.dependentTextFieldRequired;
-        options.dependentTextFieldType = this.dependentTextFieldType;
-        options.dependentTextFieldLabel = this.dependentTextFieldLabel;
-      }
-
-      DependentStageModal.open(options)
+      DependentStageModal.open({
+        fieldName: fieldname,
+        size: size || "large",
+        fieldOptions: dependentPicklistValueSet,
+        dependentField: dependentPicklistField,
+        dependentTextField: dependentTextField,
+        dependentTextFieldLabel: dependentTextFieldLabel,
+        dependentTextFieldType: dependentTextFieldType,
+        dependentTextFieldRequired: dependentTextFieldRequired,
+        stage: dependentStatus,
+      })
         .then((result) => {
-          if (result === "cancel") {
-            reject("cancel");
-          } else {
-            resolve(result);
-          }
+          resolve(result);
         })
         .catch((error) => {
           console.error("error popping modal: " + error);
@@ -336,48 +386,44 @@ export default class CustomPath extends LightningElement {
     });
   }
 
+  // Determines whether we should show the dependent picklist based on the selected step.
   shouldShowDependentPicklist() {
-    // Check if the selected status matches the dependent status
-    const shouldShow = this.selectedStep === this.dependentStatus;
-    return shouldShow;
-  }
-
-  displayDependentPicklist() {
-    this.showDependentPicklist = true;
-  }
-
-  hideDependentPicklist() {
-    this.showDependentPicklist = false;
+    let objectinfo = this.parsedependentFormula();
+    let dependentStatuses = Object.keys(objectinfo);
+    return dependentStatuses.includes(this.selectedStep);
   }
 
   // -----------------------------------------
   // Getters
   // -----------------------------------------
 
-  get dependentPicklistValue() {
-    // using uiRecordApi to get the value of the dependent picklist
-    // return null;
-    return this.dependentPicklistValue;
+
+  get saveButtonLabel(){
+    // return Mark Status as {this.currentPath} the first time... then afterwards use {this.selectedStep}.. otherwise if pathChangeButtonLabel has a value use that
+    // return this.selectedStep === "" ? `Mark Status as ${this.currentPath}` : `Mark Status as ${this.selectedStep}`;
+    return this.pathChangeButtonLabel ? this.pathChangeButtonLabel : this.selectedStep === "" ? `Mark Status as ${this.currentPath}` : `Mark Status as ${this.selectedStep}`;
   }
 
-  get dependentPicklistValueSet() {
-    return this.dependentPicklistValues;
-  }
-
-  get dependentPicklistLabel() {
-    return this.objectInformation.fields[this.dependentPicklistField].label;
-  }
-
-  get dependentTextFieldLabel() {
-    return this.objectInformation.fields[this.dependentTextField].label;
-  }
 
   get numVendors() {
-    return this.record.data.fields.Number_of_unpaid_Vendors__c.value;
+    if (this.objectApiName === "Case") {
+      // console.log(getFieldValue(this.record.data, vendorfield));
+      // return getFieldValue(this.record.data, vendorfield);
+
+      console.log(this.record.fields.Number_of_unpaid_Vendors__c.value)
+      return this.record.fields.Number_of_unpaid_Vendors__c.value
+    } else {
+      return 0;
+    }
   }
 
   get dependentPicklistFieldName() {
-    return this.objectApiName + "." + this.dependentPicklistField;
+    let objectinfo = this.parsedependentFormula();
+    objectinfo = Object.keys(objectinfo).map((item) => {
+      return this.objectApiName + "." + objectinfo[item].dependentPicklist;
+    });
+    let dependentPicklistFields = [...new Set(objectinfo)];
+    return dependentPicklistFields;
   }
 
   get currentPathIndex() {
@@ -404,20 +450,55 @@ export default class CustomPath extends LightningElement {
     return this.objectApiName + "." + this.picklistPathFieldApiName;
   }
 
-  get objectQualifiedPathFieldApiNames() {
-    return [this.objectQualifiedPathFieldApiName];
-  }
-
-  get vendorFieldGetter() {
-    // if object is case, then proceed
-    if (this.objectApiName === "Case") {
-      return vendorfield;
-    }
-  }
-
   // -----------------------------------------
   // Helper Methods
   // -----------------------------------------
+
+  // Gets all of the dependent picklist fields, dependent text fields, and the statuses that accompany them. Parses the formula.
+  parsedependentFormula() {
+    let input = this.dependentFormula;
+    let sets = input.split(",");
+
+    let output = {};
+
+    sets.forEach((set) => {
+      set = set.trim();
+      // This regex handles the case where the text field might be missing
+      let match = set.match(/^(.*?)\[(.*?)\](?:\[(.*?)\])?$/);
+
+      if (match) {
+        let dependentStatus = match[1].trim();
+        let dependentPicklist = match[2] ? match[2].trim() : null;
+        let dependentTextField = match[3] ? match[3].trim() : null;
+
+        // Create an object for the dependentStatus if it doesn't exist
+        if (!output[dependentStatus]) {
+          output[dependentStatus] = {};
+        }
+
+        // Update the values for the dependentStatus
+        if (dependentPicklist) {
+          output[dependentStatus].dependentPicklist = dependentPicklist;
+        }
+        if (dependentTextField) {
+          output[dependentStatus].dependentTextField = dependentTextField;
+        }
+      } else {
+        console.warn(`Input '${set}' does not match expected format.`);
+      }
+    });
+
+    return output;
+  }
+
+  getFieldLabel(field) {
+    return this.objectInformation.fields[field].label;
+  }
+
+  addObjectName(field) {
+    return this.objectApiName + "." + field;
+  }
+
   toggleChangePathButton(toHide) {
     this.template.querySelector("lightning-button").style = toHide
       ? "display: none"

@@ -43,25 +43,13 @@
                                 default=""
                         />
                         <property
-                                name="dependentStatus"
-                                label="Path Dependant Status"
-                                description="Status that should show the dependant picklist. Disabled if blank. Can only be one."
+                                name="dependentFormula"
+                                label="Path Status / Field Formula"
+                                description="Use the following formula: Field[Dependent_Picklist][Dependent_Text_Field]. Dependent Text Fields are not required.
+                                For example: On Hold[On_Hold_Reason__c], Closed Lost[Closed_Lost_Reason__c][Lost_Description__c]"
                                 type="String"
                                 default=""
                 />
-                        <property
-                                name="dependentPicklistField"
-                                label="Path Dependant Picklist Field"
-                                description="Dependant Picklist Field API Name. Disabled if blank, and needs dependant status."
-                                type="String"
-                                default=""
-                        />
-                        <property name="dependentTextField"
-                                label="Path Dependant Text Field"
-                                description="Dependant Text Field API Name. Disabled if blank, and needs dependant status."
-                                type="String"
-                                default=""
-                        />
                         <property name="dependentTextFieldType"
                                 label="Path Dependant Text Field Type"
                                 description="Dependant Text Field Type. Options: smallText, longText. smallText if blank."

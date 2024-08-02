@@ -24,7 +24,7 @@
                 </template>
                 <template if:false={isDependentTextFieldTextArea}>
                     <div class="dependent-text">
-                        <lightning-input type={getDependentTextFieldType} label={getDependentTextFieldLabel} value={dependentTextFieldValue} class={dependentTextFieldClass}
+                        <lightning-input type={getDependentTextFieldType} label={dependentTextFieldLabel} value={dependentTextFieldValue} class={dependentTextFieldClass}
                                          onchange={handleDependentTextFieldChange}></lightning-input>
                     </div>
                 </template>
